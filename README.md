@@ -1,13 +1,13 @@
 # Remote Sensing Parcel Boundary Extraction
 
-本项目用于遥感影像中的田块/地块边界提取。代码基于 PyTorch Lightning 组织训练流程，默认使用 FTW（Fields of The World）数据集，并实现了面向田块分割的 HBGNet 风格多任务模型。
+本项目用于遥感影像中的田块/地块边界提取。代码基于 PyTorch Lightning 组织训练流程，默认使用 FHAPD 数据集，并实现了面向田块分割的 HBGNet 风格多任务模型。FTW（Fields of The World）数据集仍可通过命令行参数切换使用。
 
-仓库只保存代码、测试和文档，不保存真实数据、日志和 checkpoint。`ftw_data/` 是本地数据目录，已经加入 `.gitignore`，不会被推送到 GitHub。
+仓库只保存代码、测试和文档，不保存真实数据、日志和 checkpoint。`FHAPD/`、`ftw_data/`、`logs/` 和 checkpoint 文件不会被推送到 GitHub。
 
 ## 项目功能
 
-- 使用 FTW 数据集进行田块二值分割、边界监督和距离图监督。
-- 支持 FHAPD 原始 `img/mask` 目录，并可在线生成 contour 和 distance map。
+- 默认支持 FHAPD 原始 `img/mask` 目录，并可在线生成 contour 和 distance map。
+- 支持 FTW 数据集进行田块二值分割、边界监督和距离图监督。
 - 提供 `others/download_ftw.py`，用于下载 FTW 国家数据包并转换为项目训练目录。
 - 提供 FHAPD 数据检查、增强分析、boundary/dist 生成和质量验证脚本。
 - 使用 `data/DInterface` 统一创建 train、val、test DataLoader。
@@ -35,14 +35,26 @@
 |   |-- model_interface.py          # LightningModule 统一入口
 |   |-- hbg_net.py                  # HBGNet 模型
 |   `-- example_net.py              # 快速测试用示例模型
+|-- scripts/
+|   `-- fhapd/                      # FHAPD 数据检查、分析和预处理脚本
 |-- tests/                          # 单元测试
-|-- analyze_*.py                    # FHAPD 数据分析脚本
-|-- generate_boundary_distance.py   # FHAPD boundary/dist 离线生成脚本
-|-- validate_boundary_distance_quality.py
 `-- docs/                           # 设计文档和项目图说明
 ```
 
-本地数据生成后建议放在：
+FHAPD 原始数据建议放在项目根目录的 `FHAPD/`，或通过环境变量 `FHAPD_ROOT` 指定：
+
+```text
+FHAPD/
+|-- SC/
+|   |-- img/
+|   `-- mask/
+|-- JS/
+|   |-- img/
+|   `-- mask/
+`-- ...
+```
+
+FTW 本地数据生成后建议放在：
 
 ```text
 ftw_data/
@@ -116,6 +128,25 @@ uv run python -m pytest -q -p no:cacheprovider
 ```
 
 `-p no:cacheprovider` 用于避免生成 `.pytest_cache/`。
+
+### 5. Conda 用户可选方案
+
+如果本机主要使用 conda，尤其是需要 CUDA、rasterio、opencv 等二进制依赖时，也可以用 conda 创建训练环境：
+
+```powershell
+conda create -n RSPBE python=3.12
+conda activate RSPBE
+pip install -e ".[dev]"
+```
+
+之后可以直接在 conda 环境中运行测试和训练：
+
+```powershell
+python -m pytest -q -p no:cacheprovider
+python main.py --data_root D:\path\to\FHAPD --region all
+```
+
+仓库仍以 `uv.lock` 作为主要复现记录；conda 方案适合作为本机训练和调试环境。
 
 ## 数据下载与预处理
 
@@ -247,6 +278,18 @@ boundary
 dist
 ```
 
+## FHAPD 数据工具脚本
+
+FHAPD 相关的数据检查、增强分析、异常样本诊断、boundary/dist 生成和质量验证脚本统一放在 `scripts/fhapd/`。建议在项目根目录运行，例如：
+
+```powershell
+uv run python scripts\fhapd\dataset_inspector.py
+uv run python scripts\fhapd\generate_boundary_distance.py
+uv run python scripts\fhapd\validate_boundary_distance_quality.py
+```
+
+这些脚本默认读取 `FHAPD_ROOT` 环境变量；未设置时读取项目根目录下的 `FHAPD/`。输出日志和 CSV/JSON 报告默认写入 `logs/`。
+
 ## 快速运行
 
 ### 1. 不依赖真实数据的测试
@@ -255,7 +298,7 @@ dist
 uv run python -m pytest -q -p no:cacheprovider
 ```
 
-测试会在临时目录构造小型 TIFF 数据，不会读取 `ftw_data/`。
+测试会在临时目录构造小型数据，不会读取真实数据目录。
 
 ### 2. 使用示例数据做训练链路检查
 
@@ -275,12 +318,32 @@ uv run python main.py `
   --num_workers 0
 ```
 
-### 3. 使用 FTW 数据做快速检查
+### 3. 使用 FHAPD 数据做快速检查
+
+FHAPD 默认数据根目录为 `FHAPD`，也可以通过环境变量 `FHAPD_ROOT` 或命令行 `--data_root` 指定。
+
+```powershell
+$env:FHAPD_ROOT = "D:\path\to\FHAPD"
+uv run python main.py `
+  --fast_dev_run true `
+  --accelerator cpu `
+  --devices 1 `
+  --num_workers 0 `
+  --data_root $env:FHAPD_ROOT `
+  --region all
+```
+
+`fast_dev_run=true` 只跑极少量 batch，适合检查数据、模型、损失函数和 checkpoint 配置是否能串起来。
+
+### 4. 使用 FTW 数据做快速检查
 
 确认 `ftw_data/ftw_dataset` 已经生成后执行：
 
 ```powershell
 uv run python main.py `
+  --train_dataset ftw_dataset `
+  --val_datasets ftw_dataset `
+  --test_datasets ftw_dataset `
   --fast_dev_run true `
   --accelerator cpu `
   --devices 1 `
@@ -289,32 +352,30 @@ uv run python main.py `
   --country kenya
 ```
 
-`fast_dev_run=true` 只跑极少量 batch，适合检查数据、模型、损失函数和 checkpoint 配置是否能串起来。
+## 正式训练
 
-### 4. 使用 FHAPD 数据做快速检查
-
-FHAPD 默认数据根目录为 `FHAPD`，也可以通过环境变量 `FHAPD_ROOT` 或命令行 `--data_root` 指定。
+FHAPD 默认训练示例：
 
 ```powershell
 $env:FHAPD_ROOT = "D:\path\to\FHAPD"
 uv run python main.py `
-  --train_dataset fhapd_dataset `
-  --val_datasets fhapd_dataset `
-  --test_datasets fhapd_dataset `
   --data_root $env:FHAPD_ROOT `
   --region all `
-  --fast_dev_run true `
-  --accelerator cpu `
+  --max_epochs 50 `
+  --batch_size 4 `
+  --accelerator gpu `
   --devices 1 `
-  --num_workers 0
+  --num_workers 4 `
+  --precision 16-mixed
 ```
 
-## 正式训练
-
-单国家训练示例：
+使用 FTW 单国家训练示例：
 
 ```powershell
 uv run python main.py `
+  --train_dataset ftw_dataset `
+  --val_datasets ftw_dataset `
+  --test_datasets ftw_dataset `
   --data_root ftw_data/ftw_dataset `
   --country kenya `
   --max_epochs 50 `
@@ -325,10 +386,13 @@ uv run python main.py `
   --precision 16-mixed
 ```
 
-多国家合并训练示例：
+使用 FTW 多国家合并训练示例：
 
 ```powershell
 uv run python main.py `
+  --train_dataset ftw_dataset `
+  --val_datasets ftw_dataset `
+  --test_datasets ftw_dataset `
   --data_root ftw_data/ftw_dataset `
   --country kenya rwanda `
   --max_epochs 50 `
@@ -338,25 +402,12 @@ uv run python main.py `
   --num_workers 4
 ```
 
-使用所有已下载国家训练：
-
-```powershell
-uv run python main.py `
-  --data_root ftw_data/ftw_dataset `
-  --country all `
-  --max_epochs 50 `
-  --batch_size 4 `
-  --accelerator gpu `
-  --devices 1 `
-  --num_workers 4
-```
-
-`--country all` 会扫描 `ftw_data/ftw_dataset` 下所有包含当前 split 数据的国家目录，并合并为一个训练集。
+FHAPD 的 `--region all` 会按默认区域划分创建 train/val/test；FTW 的 `--country all` 会扫描 `ftw_data/ftw_dataset` 下所有包含当前 split 数据的国家目录，并合并为一个训练集。
 
 训练日志默认写入：
 
 ```text
-logs/hbg_net_ftw
+logs/hbg_net_fhapd
 ```
 
 checkpoint 由 Lightning 的 `ModelCheckpoint` callback 管理，默认保存最优模型和 `last.ckpt`。`logs/`、`checkpoints/` 和 `*.ckpt` 都不会提交到 Git。
@@ -365,11 +416,11 @@ checkpoint 由 Lightning 的 `ModelCheckpoint` callback 管理，默认保存最
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `--train_dataset` | `ftw_dataset` | 训练数据集模块名 |
-| `--val_datasets` | `ftw_dataset` | 验证数据集模块名，可传多个 |
-| `--test_datasets` | `ftw_dataset` | 测试数据集模块名，可传多个 |
-| `--data_root` | `ftw_data/ftw_dataset` | 转换后 FTW 数据根目录 |
-| `--country` | `all` | 训练国家，可传 `all` 或 `kenya rwanda` |
+| `--train_dataset` | `fhapd_dataset` | 训练数据集模块名 |
+| `--val_datasets` | `fhapd_dataset` | 验证数据集模块名，可传多个 |
+| `--test_datasets` | `fhapd_dataset` | 测试数据集模块名，可传多个 |
+| `--data_root` | `FHAPD` | 数据根目录；设置 `FHAPD_ROOT` 后默认使用该环境变量 |
+| `--country` | `all` | FTW 国家，可传 `all` 或 `kenya rwanda` |
 | `--region` | `all` | FHAPD 区域，可传 `all` 或具体区域名 |
 | `--model_name` | `hbg_net` | 模型模块名 |
 | `--loss` | `loss_f` | HBGNet 多任务损失 |

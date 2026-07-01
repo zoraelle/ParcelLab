@@ -1,6 +1,6 @@
 """训练入口参数的回归测试。
 
-这些测试只检查 argparse 默认值，不启动 Lightning Trainer，也不读取真实 FTW 数据。
+这些测试只检查 argparse 默认值，不启动 Lightning Trainer，也不读取真实数据。
 这样可以快速发现默认训练配置被意外改回示例模型或不适合本项目数据的情况。
 """
 
@@ -17,24 +17,34 @@ def test_parser_defaults_are_cpu_safe():
     assert args.fast_dev_run is False
 
 
-def test_parser_exposes_ftw_defaults():
-    """默认业务配置应指向 FTW 数据集、HBGNet 模型和多任务损失。"""
+def test_parser_exposes_fhapd_defaults():
+    """默认业务配置应指向 FHAPD 数据集、HBGNet 模型和多任务损失。"""
     from main import build_parser
 
     args = build_parser().parse_args([])
 
-    assert args.train_dataset == "ftw_dataset"
-    assert args.val_datasets == ["ftw_dataset"]
-    assert args.test_datasets == ["ftw_dataset"]
-    assert args.data_root == "ftw_data/ftw_dataset"
+    assert args.train_dataset == "fhapd_dataset"
+    assert args.val_datasets == ["fhapd_dataset"]
+    assert args.test_datasets == ["fhapd_dataset"]
+    assert args.data_root == "FHAPD"
     assert args.country == ["all"]
     assert args.region == ["all"]
+    assert args.experiment_name == "hbg_net_fhapd"
     assert args.model_name == "hbg_net"
     assert args.in_channels == 3
     assert args.num_classes == 2
     assert args.loss == "loss_f"
     assert args.metric == "none"
     assert args.return_aux_outputs is True
+
+
+def test_parser_uses_fhapd_root_environment_variable(monkeypatch):
+    """FHAPD_ROOT 应能覆盖默认数据根目录。"""
+    from main import build_parser
+
+    monkeypatch.setenv("FHAPD_ROOT", "/tmp/FHAPD")
+
+    assert build_parser().parse_args([]).data_root == "/tmp/FHAPD"
 
 
 def test_parser_accepts_all_and_arbitrary_ftw_countries():
