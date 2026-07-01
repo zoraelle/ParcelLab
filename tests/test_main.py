@@ -27,7 +27,8 @@ def test_parser_exposes_ftw_defaults():
     assert args.val_datasets == ["ftw_dataset"]
     assert args.test_datasets == ["ftw_dataset"]
     assert args.data_root == "ftw_data/ftw_dataset"
-    assert args.country == ["kenya"]
+    assert args.country == ["all"]
+    assert args.region == ["all"]
     assert args.model_name == "hbg_net"
     assert args.in_channels == 3
     assert args.num_classes == 2
@@ -47,6 +48,16 @@ def test_parser_accepts_all_and_arbitrary_ftw_countries():
         "germany",
         "france",
     ]
+
+
+def test_parser_accepts_fhapd_regions():
+    """训练入口应允许 FHAPD 指定 all 或多个区域。"""
+    from main import build_parser
+
+    parser = build_parser()
+
+    assert parser.parse_args(["--region", "all"]).region == ["all"]
+    assert parser.parse_args(["--region", "SC", "JS"]).region == ["SC", "JS"]
 
 
 def test_checkpoint_monitor_matches_number_of_validation_loaders():

@@ -7,7 +7,9 @@
 ## 项目功能
 
 - 使用 FTW 数据集进行田块二值分割、边界监督和距离图监督。
+- 支持 FHAPD 原始 `img/mask` 目录，并可在线生成 contour 和 distance map。
 - 提供 `others/download_ftw.py`，用于下载 FTW 国家数据包并转换为项目训练目录。
+- 提供 FHAPD 数据检查、增强分析、boundary/dist 生成和质量验证脚本。
 - 使用 `data/DInterface` 统一创建 train、val、test DataLoader。
 - 使用 `model/MInterface` 统一管理模型、损失函数、指标、优化器和学习率调度器。
 - 默认模型为 `model/hbg_net.py` 中的 `HbgNet`，主干包含 PVT-v2 风格编码器、边界引导解码器和多任务输出头。
@@ -23,6 +25,7 @@
 |-- data/
 |   |-- data_interface.py           # LightningDataModule 统一入口
 |   |-- ftw_dataset.py              # FTW 数据集读取逻辑
+|   |-- fhapd_dataset.py            # FHAPD 数据集读取逻辑
 |   `-- example_data.py             # 快速测试用示例数据集
 |-- others/
 |   `-- download_ftw.py             # FTW 下载、解压和预处理脚本
@@ -33,6 +36,9 @@
 |   |-- hbg_net.py                  # HBGNet 模型
 |   `-- example_net.py              # 快速测试用示例模型
 |-- tests/                          # 单元测试
+|-- analyze_*.py                    # FHAPD 数据分析脚本
+|-- generate_boundary_distance.py   # FHAPD boundary/dist 离线生成脚本
+|-- validate_boundary_distance_quality.py
 `-- docs/                           # 设计文档和项目图说明
 ```
 
@@ -285,6 +291,24 @@ uv run python main.py `
 
 `fast_dev_run=true` 只跑极少量 batch，适合检查数据、模型、损失函数和 checkpoint 配置是否能串起来。
 
+### 4. 使用 FHAPD 数据做快速检查
+
+FHAPD 默认数据根目录为 `FHAPD`，也可以通过环境变量 `FHAPD_ROOT` 或命令行 `--data_root` 指定。
+
+```powershell
+$env:FHAPD_ROOT = "D:\path\to\FHAPD"
+uv run python main.py `
+  --train_dataset fhapd_dataset `
+  --val_datasets fhapd_dataset `
+  --test_datasets fhapd_dataset `
+  --data_root $env:FHAPD_ROOT `
+  --region all `
+  --fast_dev_run true `
+  --accelerator cpu `
+  --devices 1 `
+  --num_workers 0
+```
+
 ## 正式训练
 
 单国家训练示例：
@@ -345,13 +369,14 @@ checkpoint 由 Lightning 的 `ModelCheckpoint` callback 管理，默认保存最
 | `--val_datasets` | `ftw_dataset` | 验证数据集模块名，可传多个 |
 | `--test_datasets` | `ftw_dataset` | 测试数据集模块名，可传多个 |
 | `--data_root` | `ftw_data/ftw_dataset` | 转换后 FTW 数据根目录 |
-| `--country` | `kenya` | 训练国家，可传 `all` 或 `kenya rwanda` |
+| `--country` | `all` | 训练国家，可传 `all` 或 `kenya rwanda` |
+| `--region` | `all` | FHAPD 区域，可传 `all` 或具体区域名 |
 | `--model_name` | `hbg_net` | 模型模块名 |
 | `--loss` | `loss_f` | HBGNet 多任务损失 |
 | `--metric` | `none` | 指标，支持 `none`、`accuracy`、`recall` |
 | `--optimizer` | `adamw` | 优化器，支持 `sgd`、`adam`、`adamw` |
 | `--lr_scheduler` | `none` | 学习率调度器，支持 `none`、`step`、`cosine` |
-| `--img_size` | `512` | HBGNet 输入尺寸参数 |
+| `--img_size` | `256` | HBGNet 输入尺寸参数 |
 | `--return_aux_outputs` | `true` | 是否返回 mask、edge、distance 三个输出 |
 
 ## 扩展模型

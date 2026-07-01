@@ -37,6 +37,25 @@ def _build_ftw_split(root: Path, country: str, split: str, sample_name: str = "s
     _write_tif(base / "dist" / f"{sample_name}.tif", dist)
 
 
+def _write_png(path: Path, array: np.ndarray) -> None:
+    """写入测试用 PNG 文件。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(array).save(path)
+
+
+def _build_fhapd_region(root: Path, region: str, sample_name: str = "sample_0") -> None:
+    """构造一个最小 FHAPD region，包含 img/mask PNG 文件。"""
+    image = np.zeros((8, 8, 3), dtype=np.uint8)
+    image[:, :, 0] = 32
+    image[:, :, 1] = 96
+    image[:, :, 2] = 160
+    mask = np.zeros((8, 8), dtype=np.uint8)
+    mask[2:6, 2:6] = 255
+
+    _write_png(root / region / "img" / f"{sample_name}.png", image)
+    _write_png(root / region / "mask" / f"{sample_name}.png", mask)
+
+
 def test_ftw_dataset_scans_samples(tmp_path):
     """FtwDataset 应能自动扫描 image 目录并读取配套标签。"""
     from data.ftw_dataset import FtwDataset
@@ -239,3 +258,52 @@ def test_data_interface_builds_fake_data_loaders(tmp_path):
 
     dm.setup("test")
     assert len(dm.test_dataloader()) == 1
+
+
+def test_fhapd_dataset_scans_region_and_generates_targets(tmp_path):
+    """FhapdDataset 应能读取原始 img/mask，并在线生成 contour/dist。"""
+    from data.fhapd_dataset import FhapdDataset
+
+    fhapd_root = tmp_path / "FHAPD"
+    _build_fhapd_region(fhapd_root, "SC", sample_name="sample_0")
+
+    dataset = FhapdDataset(data_root=str(fhapd_root), region="SC", split="train")
+
+    assert len(dataset) == 1
+    sample_name, image, mask, contour, dist = dataset[0]
+    assert sample_name == "SC/sample_0"
+    assert image.shape == (3, 8, 8)
+    assert mask.shape == (1, 8, 8)
+    assert contour.shape == (1, 8, 8)
+    assert dist.shape == (1, 8, 8)
+    assert mask.dtype == torch.float32
+    assert contour.dtype == torch.int64
+    assert dist.dtype == torch.float32
+
+
+def test_data_interface_builds_fhapd_loaders_with_all_regions(tmp_path):
+    """DInterface 应能把 region=all 传给 FHAPD，并按 split 选择默认区域。"""
+    from data import DInterface
+
+    fhapd_root = tmp_path / "FHAPD"
+    _build_fhapd_region(fhapd_root, "SC", sample_name="train_sample")
+    _build_fhapd_region(fhapd_root, "CQ", sample_name="val_sample")
+
+    dm = DInterface(
+        train_dataset="fhapd_dataset",
+        val_datasets=["fhapd_dataset"],
+        test_datasets=["fhapd_dataset"],
+        data_root=str(fhapd_root),
+        region=["all"],
+        batch_size=1,
+        num_workers=0,
+    )
+
+    dm.setup("fit")
+
+    assert dm.train_set.regions == ["SC"]
+    assert dm.val_sets[0].regions == ["CQ"]
+
+    train_name, train_images, *_ = next(iter(dm.train_dataloader()))
+    assert tuple(train_name) == ("SC/train_sample",)
+    assert train_images.shape == (1, 3, 8, 8)
